@@ -9,6 +9,11 @@ HASHFILE="$HOME/kindle-sync/.last-hash"
 PORT="${PORT:-8787}"
 mkdir -p "$HOME/kindle-sync"
 
+# Single-instance lock — the timer and a manual run must never overlap
+# (they'd race the shared host mount and /tmp/vocab.db).
+exec 9>"$HOME/kindle-sync/.lock"
+flock -n 9 || exit 0
+
 # 1. On the host (where the Kindle reliably appears): grab vocab.db if the device is awake.
 ssh -o BatchMode=yes -o ConnectTimeout=8 zordon bash -s <<'REMOTE' || exit 0
 set -uo pipefail
