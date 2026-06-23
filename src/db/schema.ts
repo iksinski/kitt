@@ -1,4 +1,4 @@
-import { pgTable, text, integer, real, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, real, timestamp, boolean } from 'drizzle-orm/pg-core';
 
 // Mirror of the Kindle vocab.db, normalized into Postgres.
 export const books = pgTable('books', {
@@ -15,6 +15,7 @@ export const words = pgTable('words', {
   stem: text('stem').notNull(),          // lemma
   lang: text('lang').notNull(),
   category: integer('category').notNull().default(0), // 0 = learning, 100 = mastered
+  deleted: boolean('deleted').notNull().default(false), // soft-delete; survives Kindle re-import
   addedAt: timestamp('added_at', { withTimezone: true }).notNull(),
 });
 

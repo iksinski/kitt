@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kitt · vocab review</title>
+<style>
+  :root {
+    --bg:#0f1115; --card:#1a1d24; --fg:#e6e8eb; --muted:#8b919c; --line:#262a33;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--fg); min-height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; justify-content:space-between; align-items:center;
+           padding:14px 20px; border-bottom:1px solid var(--line); }
+  header strong { letter-spacing:.5px; }
+  #stats { color:var(--muted); font-size:.85rem; }
+  main { flex:1; display:flex; padding:24px; }
+  .card { background:var(--card); border-radius:16px; padding:32px; width:100%;
+          max-width:680px; margin:auto; box-shadow:0 10px 40px rgba(0,0,0,.3); }
+  .word { font-size:2.4rem; font-weight:700; word-break:break-word; }
+  .stem { color:var(--muted); margin-top:4px; font-size:1.1rem; }
+  .sentence { margin-top:18px; line-height:1.55; font-size:1.05rem; }
+  .book { color:var(--muted); font-size:.82rem; margin-top:6px; }
+  .btns { display:flex; gap:10px; margin-top:26px; flex-wrap:wrap; }
+  button { flex:1; min-width:84px; padding:13px 14px; border:0; border-radius:10px;
+           color:var(--fg); font-size:.95rem; font-weight:600; cursor:pointer; }
+  button .k { font-size:.72rem; opacity:.6; font-weight:400; }
+  .reveal { background:#2b3340; }
+  .again { background:#5a2330; } .hard { background:#5a4a23; }
+  .good  { background:#234a2a; } .easy { background:#234a5a; }
+  .del   { flex:0 0 auto; background:transparent; color:var(--muted); border:1px solid #3a3f4a; }
+  .del:hover { color:#e06c75; border-color:#e06c75; }
+  .empty { text-align:center; color:var(--muted); padding:30px 0; }
+  .empty .big { font-size:3rem; margin-bottom:8px; }
+</style>
+</head>
+<body>
+  <header><strong>kitt · vocab</strong><span id="stats"></span></header>
+  <main><div class="card" id="card"><div class="empty">Loading…</div></div></main>
+<script>
+  const $ = (s) => document.querySelector(s);
+  let queue = [], cur = null, revealed = false, busy = false;
+  const esc = (s) => (s || '').replace(/[&<>]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+
+  async function api(path, opts) { try { const r = await fetch(path, opts); return r.ok ? await r.json() : null; } catch { return null; } }
+
+  async function loadStats() {
+    const s = await api('/vocab/stats');
+    if (s) $('#stats').textContent = `${s.due} due · ${s.totalWords} words`;
+  }
+  async function loadQueue() {
+    const d = await api('/vocab/words/due?limit=100');
+    queue = d ? d.due : [];
+    next();
+  }
+  function next() { revealed = false; cur = queue.shift() || null; render(); }
+
+  async function render() {
+    const card = $('#card');
+    if (!cur) {
+      card.innerHTML = '<div class="empty"><div class="big">🎉</div>All caught up.</div>';
+      loadStats();
+      return;
+    }
+    if (!revealed) {
+      card.innerHTML =
+        `<div class="word">${esc(cur.word)}</div>
+         <div class="btns">
+           <button class="reveal" id="reveal">Show answer <span class="k">space</span></button>
+           <button class="del" id="del">🗑 <span class="k">d</span></button>
+         </div>`;
+      $('#reveal').onclick = reveal;
+      $('#del').onclick = del;
+    } else {
+      const detail = await api('/vocab/words/' + encodeURIComponent(cur.id));
+      const stem = cur.stem && cur.stem !== cur.word ? `<div class="stem">${esc(cur.stem)}</div>` : '';
+      const lks = (detail?.lookups || []).map((l) =>
+        `<div class="sentence">${esc(l.usage || '')}</div>` +
+        (l.book ? `<div class="book">${esc(l.book)}${l.authors ? ' · ' + esc(l.authors) : ''}</div>` : '')
+      ).join('');
+      card.innerHTML =
+        `<div class="word">${esc(cur.word)}</div>${stem}${lks}
+         <div class="btns">
+           <button class="again" data-r="again">Again <span class="k">1</span></button>
+           <button class="hard" data-r="hard">Hard <span class="k">2</span></button>
+           <button class="good" data-r="good">Good <span class="k">3</span></button>
+           <button class="easy" data-r="easy">Easy <span class="k">4</span></button>
+         </div>
+         <div class="btns"><button class="del" id="del">🗑 Delete <span class="k">d</span></button></div>`;
+      card.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => rate(b.dataset.r)));
+      $('#del').onclick = del;
+    }
+  }
+
+  function reveal() { revealed = true; render(); }
+  async function rate(r) {
+    if (!cur || busy) return; busy = true;
+    await api('/vocab/reviews', { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ wordId: cur.id, rating: r }) });
+    busy = false; loadStats(); next();
+  }
+  async function del() {
+    if (!cur || busy) return; busy = true;
+    await api('/vocab/words/' + encodeURIComponent(cur.id), { method:'DELETE' });
+    busy = false; loadStats(); next();
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (!cur) return;
+    if (e.key === 'd') { del(); return; }
+    if (!revealed && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); reveal(); }
+    else if (revealed && ['1','2','3','4'].includes(e.key)) { rate(['again','hard','good','easy'][+e.key - 1]); }
+  });
+
+  loadStats(); loadQueue();
+</script>
+</body>
+</html>

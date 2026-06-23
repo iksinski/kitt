@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { count, eq, lte } from 'drizzle-orm';
+import { and, count, eq, lte } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { words, lookups, books, fsrsCards } from '../../db/schema.js';
 import { review, type RatingName } from './fsrs.js';
@@ -15,7 +15,7 @@ export async function vocabRoutes(app: FastifyInstance) {
       .select({ id: words.id, word: words.word, stem: words.stem, lang: words.lang, due: fsrsCards.due, state: fsrsCards.state, reps: fsrsCards.reps })
       .from(fsrsCards)
       .innerJoin(words, eq(fsrsCards.wordId, words.id))
-      .where(lte(fsrsCards.due, now))
+      .where(and(eq(words.deleted, false), lte(fsrsCards.due, now)))
       .orderBy(fsrsCards.due)
       .limit(limit);
     return { count: due.length, due };
@@ -59,12 +59,29 @@ export async function vocabRoutes(app: FastifyInstance) {
     return await importVocab(path);
   });
 
-  // Library stats.
+  // Soft-delete a word: hide it from review. The importer never clears `deleted`, so it
+  // stays gone after the next Kindle sync instead of popping back up.
+  app.delete('/words/:id', async (req) => {
+    const id = (req.params as { id: string }).id;
+    await db.update(words).set({ deleted: true }).where(eq(words.id, id));
+    return { id, deleted: true };
+  });
+
+  // Library stats (deleted words excluded).
   app.get('/stats', async () => {
     const now = new Date();
-    const [{ total }] = await db.select({ total: count() }).from(words);
-    const [{ due }] = await db.select({ due: count() }).from(fsrsCards).where(lte(fsrsCards.due, now));
-    const byState = await db.select({ state: fsrsCards.state, n: count() }).from(fsrsCards).groupBy(fsrsCards.state);
+    const [{ total }] = await db.select({ total: count() }).from(words).where(eq(words.deleted, false));
+    const [{ due }] = await db
+      .select({ due: count() })
+      .from(fsrsCards)
+      .innerJoin(words, eq(fsrsCards.wordId, words.id))
+      .where(and(eq(words.deleted, false), lte(fsrsCards.due, now)));
+    const byState = await db
+      .select({ state: fsrsCards.state, n: count() })
+      .from(fsrsCards)
+      .innerJoin(words, eq(fsrsCards.wordId, words.id))
+      .where(eq(words.deleted, false))
+      .groupBy(fsrsCards.state);
     return { totalWords: Number(total), due: Number(due), byState };
   });
 }
