@@ -12,6 +12,7 @@
     "import": "NODE_OPTIONS=--experimental-sqlite tsx src/modules/vocab/import.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.8.5",
     "postgres": "^3.4.9",
