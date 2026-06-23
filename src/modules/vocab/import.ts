@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { books, words, lookups, fsrsCards } from '../../db/schema.js';
 import { newCard } from './fsrs.js';
+import { enrichTranslations } from './translate.js';
 
 type Row = Record<string, any>;
 const ts = (v: any): Date => new Date(Number(v));
@@ -13,6 +14,7 @@ export interface ImportResult {
   words: number;
   lookups: number;
   newCards: number;
+  translated: number;
 }
 
 /** Read a Kindle vocab.db (sqlite) and upsert it into Postgres. Idempotent. */
@@ -60,7 +62,8 @@ export async function importVocab(sqlitePath: string): Promise<ImportResult> {
     await db.insert(fsrsCards).values(toSeed.map((w) => ({ wordId: w.id, ...newCard() })));
   }
 
-  return { books: bookRows.length, words: wordRows.length, lookups: lookupRows.length, newCards: toSeed.length };
+  const translated = await enrichTranslations();
+  return { books: bookRows.length, words: wordRows.length, lookups: lookupRows.length, newCards: toSeed.length, translated };
 }
 
 // CLI: `pnpm import [path]`

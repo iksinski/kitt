@@ -19,6 +19,7 @@
   .card { background:var(--card); border-radius:16px; padding:32px; width:100%;
           max-width:680px; margin:auto; box-shadow:0 10px 40px rgba(0,0,0,.3); }
   .word { font-size:2.4rem; font-weight:700; word-break:break-word; }
+  .trans { color:#7fd1a8; margin-top:10px; font-size:1.45rem; font-weight:600; }
   .stem { color:var(--muted); margin-top:4px; font-size:1.1rem; }
   .sentence { margin-top:18px; line-height:1.55; font-size:1.05rem; }
   .book { color:var(--muted); font-size:.82rem; margin-top:6px; }
@@ -74,13 +75,14 @@
       $('#del').onclick = del;
     } else {
       const detail = await api('/vocab/words/' + encodeURIComponent(cur.id));
+      const tr = detail?.word?.translation ? `<div class="trans">${esc(detail.word.translation)}</div>` : '';
       const stem = cur.stem && cur.stem !== cur.word ? `<div class="stem">${esc(cur.stem)}</div>` : '';
       const lks = (detail?.lookups || []).map((l) =>
         `<div class="sentence">${esc(l.usage || '')}</div>` +
         (l.book ? `<div class="book">${esc(l.book)}${l.authors ? ' · ' + esc(l.authors) : ''}</div>` : '')
       ).join('');
       card.innerHTML =
-        `<div class="word">${esc(cur.word)}</div>${stem}${lks}
+        `<div class="word">${esc(cur.word)}</div>${tr}${stem}${lks}
          <div class="btns">
            <button class="again" data-r="again">Again <span class="k">1</span></button>
            <button class="hard" data-r="hard">Hard <span class="k">2</span></button>

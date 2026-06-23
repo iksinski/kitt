@@ -5,6 +5,7 @@ import { db } from '../../db/index.js';
 import { words, lookups, books, fsrsCards } from '../../db/schema.js';
 import { review, type RatingName } from './fsrs.js';
 import { importVocab } from './import.js';
+import { enrichTranslations } from './translate.js';
 
 export async function vocabRoutes(app: FastifyInstance) {
   // Words currently due for review (the main MCP/assistant entry point).
@@ -58,6 +59,9 @@ export async function vocabRoutes(app: FastifyInstance) {
     const path = body?.path ?? `${process.env.HOME}/kindle-sync/vocab.db`;
     return await importVocab(path);
   });
+
+  // Re-run Polish enrichment for any words still missing a translation.
+  app.post('/enrich', async () => ({ translated: await enrichTranslations() }));
 
   // Soft-delete a word: hide it from review. The importer never clears `deleted`, so it
   // stays gone after the next Kindle sync instead of popping back up.

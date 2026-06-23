@@ -16,6 +16,7 @@ export const words = pgTable('words', {
   lang: text('lang').notNull(),
   category: integer('category').notNull().default(0), // 0 = learning, 100 = mastered
   deleted: boolean('deleted').notNull().default(false), // soft-delete; survives Kindle re-import
+  translation: text('translation'), // Polish, from offline FreeDict; enriched once, null if uncovered
   addedAt: timestamp('added_at', { withTimezone: true }).notNull(),
 });
 
