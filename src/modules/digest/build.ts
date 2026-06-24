@@ -1,5 +1,6 @@
 import { fetchTopStories, fetchWeather, fetchUsdPln, fetchDueVocab } from './sources.js';
 import { extractArticle } from './extract.js';
+import { cleanupViaMac } from './cleanup.js';
 import { buildEpub, esc } from './epub.js';
 
 const paras = (t: string): string =>
@@ -12,7 +13,7 @@ function hostOf(url: string): string {
 export interface DigestResult {
   buffer: Buffer;
   html: string;
-  meta: { date: string; stories: number; extracted: number; vocab: number; hasWeather: boolean; hasFx: boolean };
+  meta: { date: string; stories: number; extracted: number; cleaned: number; vocab: number; hasWeather: boolean; hasFx: boolean };
 }
 
 export async function buildDigest(opts?: { stories?: number; lat?: number; lon?: number; city?: string }): Promise<DigestResult> {
@@ -36,20 +37,34 @@ export async function buildDigest(opts?: { stories?: number; lat?: number; lon?:
   if (vocab.length) front += `<h2>Vocabulary due (${vocab.length})</h2><ul>${vocab.map((v) => `<li>${esc(v.word)}${v.stem && v.stem !== v.word ? ' — ' + esc(v.stem) : ''}</li>`).join('')}</ul>`;
 
   const chapters = [{ id: 'front', title: 'kitt daily · ' + date, html: front }];
-  let extracted = 0;
+
+  // 1) Extract every article's text locally (Readability).
+  const raw: Array<{ idx: number; text: string | null }> = [];
+  for (let i = 0; i < hn.length; i++) {
+    const art = hn[i].url ? await extractArticle(hn[i].url!) : null;
+    raw.push({ idx: i, text: art?.text ?? null });
+  }
+  // 2) Batch-clean the successful ones via the Mac's locked Ollama proxy (fallback: raw text).
+  const cleaned = await cleanupViaMac(raw.filter((r) => r.text).map((r) => ({ id: `story-${r.idx + 1}`, text: r.text! })));
+
+  let extracted = 0, llmCleaned = 0;
   for (let i = 0; i < hn.length; i++) {
     const s = hn[i];
+    const id = `story-${i + 1}`;
     const host = s.url ? hostOf(s.url) : '';
     let body = `<h2>${esc(s.title)}</h2><p>${s.points} points · ${s.comments} comments${host ? ' · ' + esc(host) : ''}</p>`;
-    if (s.url) {
-      const art = await extractArticle(s.url);
-      if (art) { body += paras(art.text); extracted++; }
-      else body += `<p><em>(couldn't extract — read at <a href="${esc(s.url)}">${esc(host)}</a>)</em></p>`;
+    const rawText = raw[i].text;
+    if (rawText) {
+      extracted++;
+      if (cleaned.has(id)) llmCleaned++;
+      body += paras(cleaned.get(id) ?? rawText);
+    } else if (s.url) {
+      body += `<p><em>(couldn't extract — read at <a href="${esc(s.url)}">${esc(host)}</a>)</em></p>`;
     }
-    chapters.push({ id: `story-${i + 1}`, title: `${i + 1}. ${s.title}`, html: body });
+    chapters.push({ id, title: `${i + 1}. ${s.title}`, html: body });
   }
 
   const buffer = await buildEpub({ title: `kitt daily · ${date}`, chapters, date });
   const html = `<!doctype html><meta charset="utf-8"><body style="max-width:680px;margin:2rem auto;font-family:system-ui;line-height:1.55;padding:0 1rem">${chapters.map((c) => c.html).join('<hr/>')}</body>`;
-  return { buffer, html, meta: { date, stories: hn.length, extracted, vocab: vocab.length, hasWeather: !!weather, hasFx: !!fx } };
+  return { buffer, html, meta: { date, stories: hn.length, extracted, cleaned: llmCleaned, vocab: vocab.length, hasWeather: !!weather, hasFx: !!fx } };
 }
