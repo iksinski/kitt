@@ -56,11 +56,20 @@ export async function fetchUsdPln(): Promise<{ rate: number; date: string } | nu
   } catch { return null; }
 }
 
-export interface DueWord { id: string; word: string; stem: string; }
+export interface DueWord { id: string; word: string; stem: string; translation: string | null; sentence: string | null; }
 export async function fetchDueVocab(limit: number): Promise<DueWord[]> {
   try {
-    const r = await fetch(`http://127.0.0.1:${process.env.PORT ?? 8787}/vocab/words/due?limit=${limit}`);
-    const d: any = await r.json();
-    return d.due ?? [];
+    const base = `http://127.0.0.1:${process.env.PORT ?? 8787}`;
+    const due: any = await (await fetch(`${base}/vocab/words/due?limit=${limit}`)).json();
+    const out: DueWord[] = [];
+    for (const w of due.due ?? []) {
+      const detail: any = await (await fetch(`${base}/vocab/words/${encodeURIComponent(w.id)}`)).json();
+      out.push({
+        id: w.id, word: w.word, stem: w.stem,
+        translation: detail.word?.translation ?? null,
+        sentence: detail.lookups?.[0]?.usage ?? null,
+      });
+    }
+    return out;
   } catch { return []; }
 }

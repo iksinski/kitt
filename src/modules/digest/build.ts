@@ -10,6 +10,11 @@ function hostOf(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 
+const trimSentence = (s: string): string => {
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > 240 ? t.slice(0, 240).replace(/\s+\S*$/, '') + '…' : t;
+};
+
 export interface DigestResult {
   buffer: Buffer;
   html: string;
@@ -27,16 +32,25 @@ export async function buildDigest(opts?: { stories?: number; lat?: number; lon?:
     fetchTopStories(stories),
     fetchWeather(lat, lon),
     fetchUsdPln(),
-    fetchDueVocab(10),
+    fetchDueVocab(3),
   ]);
 
   // Front page: weather, FX, due vocab.
   let front = `<h1>kitt daily</h1><p>${date}</p>`;
   if (weather) front += `<h2>Weather · ${esc(city)}</h2><p>${weather.nowC != null ? 'Now ' + weather.nowC + '°C' + (weather.condition ? ', ' + esc(weather.condition) : '') + '. ' : ''}Today ${weather.minC}–${weather.maxC}°C, precipitation ${weather.precipMm} mm. <span>(yr.no)</span></p>`;
   if (fx) front += `<h2>USD / PLN</h2><p>${fx.rate} (NBP, ${fx.date})</p>`;
-  if (vocab.length) front += `<h2>Vocabulary due (${vocab.length})</h2><ul>${vocab.map((v) => `<li>${esc(v.word)}${v.stem && v.stem !== v.word ? ' — ' + esc(v.stem) : ''}</li>`).join('')}</ul>`;
+  if (vocab.length) {
+    front += `<h2>Vocabulary</h2><ol>${vocab.map((v) => {
+      const s = v.sentence ? `<br/><em>“${esc(trimSentence(v.sentence))}”</em>` : '';
+      return `<li><strong>${esc(v.word)}</strong>${s}</li>`;
+    }).join('')}</ol><p><small>Translations on the next page →</small></p>`;
+  }
 
   const chapters = [{ id: 'front', title: 'kitt daily · ' + date, html: front }];
+  if (vocab.length) {
+    const t = `<h2>Vocabulary — translations</h2><ol>${vocab.map((v) => `<li><strong>${esc(v.word)}</strong> — ${esc(v.translation || '—')}</li>`).join('')}</ol>`;
+    chapters.push({ id: 'vocab-translations', title: 'Vocabulary — translations', html: t });
+  }
 
   // 1) Extract every article's text locally (Readability).
   const raw: Array<{ idx: number; text: string | null }> = [];
