@@ -3,6 +3,7 @@ import { mkdir, writeFile, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDigest } from './build.js';
+import { sendToKindle, mailConfigured } from './mail.js';
 
 const DIR = `${process.env.HOME}/digests`;
 const ICONS = fileURLToPath(new URL('../../../assets/weather-icons/', import.meta.url));
@@ -41,5 +42,17 @@ export async function digestRoutes(app: FastifyInstance) {
     await writeFile(base + '.epub', buffer);
     await writeFile(base + '.html', html);
     return { ...meta, path: base + '.epub', bytes: buffer.length };
+  });
+
+  // Build today's paper and email it to the Kindle. This is what the morning timer calls.
+  app.post('/send', async () => {
+    if (!mailConfigured()) return { sent: false, reason: 'mail not configured — set SMTP_* and KINDLE_EMAIL in .env' };
+    const { buffer, html, meta } = await buildDigest();
+    await mkdir(DIR, { recursive: true });
+    const base = join(DIR, `kitt-daily-${meta.date}`);
+    await writeFile(base + '.epub', buffer);
+    await writeFile(base + '.html', html);
+    await sendToKindle(buffer, `kitt-daily-${meta.date}.epub`);
+    return { ...meta, sent: true };
   });
 }
