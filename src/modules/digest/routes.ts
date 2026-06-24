@@ -45,9 +45,10 @@ export async function digestRoutes(app: FastifyInstance) {
   });
 
   // Build today's paper and email it to the Kindle. This is what the morning timer calls.
-  app.post('/send', async () => {
+  app.post('/send', async (req) => {
     if (!mailConfigured()) return { sent: false, reason: 'mail not configured — set SMTP_* and KINDLE_EMAIL in .env' };
-    const { buffer, html, meta } = await buildDigest();
+    const stories = Number((req.query as { stories?: string })?.stories) || undefined;
+    const { buffer, html, meta } = await buildDigest({ stories });
     await mkdir(DIR, { recursive: true });
     const base = join(DIR, `kitt-daily-${meta.date}`);
     await writeFile(base + '.epub', buffer);
