@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { buildEpub } from './epub.js';
+import { buildEpub, esc } from './epub.js';
 import type { DigestModule, DigestContext, Block } from './types.js';
 import { weatherModule } from './modules/weather.js';
 import { fxModule } from './modules/fx.js';
@@ -40,12 +40,20 @@ export async function buildDigest(opts?: { stories?: number; lat?: number; lon?:
 
   // Group blocks into pages: a block with newPage starts a fresh chapter; the rest flow
   // onto the current page. Front-matter (weather/fx/vocab-questions) shares the front page.
-  const pages: Array<{ id: string; title: string; html: string }> = [
+  const pages: Array<{ id: string; title: string; html: string; kind?: string }> = [
     { id: 'front', title: `kitt daily · ${date}`, html: `<h1>kitt daily</h1><p>${date}</p>` },
   ];
   for (const b of blocks) {
-    if (b.newPage) pages.push({ id: `ch${pages.length}`, title: b.title, html: b.html });
+    if (b.newPage) pages.push({ id: `ch${pages.length}`, title: b.title, html: b.html, kind: b.kind });
     else pages[pages.length - 1].html += `\n${b.html}`;
+  }
+
+  // A "In this issue" contents page listing the articles, inserted just before the first one.
+  const firstArticle = pages.findIndex((p) => p.kind === 'article');
+  if (firstArticle !== -1) {
+    const list = pages.filter((p) => p.kind === 'article')
+      .map((p) => `<li><a href="${p.id}.xhtml">${esc(p.title.replace(/^\d+\.\s*/, ''))}</a></li>`).join('');
+    pages.splice(firstArticle, 0, { id: 'contents', title: 'In this issue', html: `<h2>In this issue</h2><ol>${list}</ol>` });
   }
 
   // Embed any weather icons referenced in the pages.

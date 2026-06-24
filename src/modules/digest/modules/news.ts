@@ -27,7 +27,7 @@ export function newsModule(cfg: { stories: number }): DigestModule {
         const rt = raw[i].text;
         if (rt) body += paras(cleaned.get(`s${i}`) ?? rt);
         else if (s.url) body += `<p><em>(couldn't extract — read at <a href="${esc(s.url)}">${esc(host)}</a>)</em></p>`;
-        blocks.push({ title: `${i + 1}. ${s.title}`, html: body, newPage: true });
+        blocks.push({ title: `${i + 1}. ${s.title}`, html: body, newPage: true, kind: 'article' });
       }
       return blocks;
     },

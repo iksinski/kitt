@@ -10,7 +10,7 @@ export interface DigestContext {
 
 // A rendered section. Blocks flow onto the current page unless newPage is set, which
 // starts a fresh chapter (so front-matter flows together; articles get their own page).
-export interface Block { title: string; html: string; newPage?: boolean; }
+export interface Block { title: string; html: string; newPage?: boolean; kind?: 'article' }
 
 export interface DigestModule {
   id: string;
