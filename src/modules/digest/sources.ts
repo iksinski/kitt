@@ -27,6 +27,43 @@ const humanize = (code?: string): string => {
   return SYMBOLS[base] ?? base.replace(/_/g, ' ');
 };
 
+export interface WeatherPart { name: string; tempC: number; symbol: string; precipMm: number; }
+export interface WeatherDetailed { nowC: number | null; condition: string; minC: number; maxC: number; parts: WeatherPart[]; }
+
+const partOf = (h: number): string => (h < 6 ? 'Night' : h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening');
+const localHour = (iso: string): number =>
+  Number(new Date(iso).toLocaleString('en-US', { timeZone: 'Europe/Warsaw', hour: '2-digit', hour12: false })) % 24;
+
+export async function fetchWeatherDetailed(lat: number, lon: number): Promise<WeatherDetailed | null> {
+  try {
+    const r = await fetch(`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`,
+      { headers: { 'User-Agent': MET_UA }, signal: AbortSignal.timeout(15000) });
+    if (!r.ok) return null;
+    const d: any = await r.json();
+    const ts: any[] = d.properties.timeseries.slice(0, 24);
+    const groups = new Map<string, any[]>();
+    for (const t of ts) { const p = partOf(localHour(t.time)); if (!groups.has(p)) groups.set(p, []); groups.get(p)!.push(t); }
+    const parts: WeatherPart[] = ['Morning', 'Afternoon', 'Evening', 'Night'].filter((n) => groups.has(n)).map((name) => {
+      const arr = groups.get(name)!;
+      const temps = arr.map((t) => t.data.instant.details.air_temperature).filter((x: any) => x != null);
+      const mid = arr[Math.floor(arr.length / 2)];
+      return {
+        name,
+        tempC: Math.round(temps.reduce((a: number, b: number) => a + b, 0) / temps.length),
+        symbol: mid.data.next_1_hours?.summary?.symbol_code ?? mid.data.next_6_hours?.summary?.symbol_code ?? 'cloudy',
+        precipMm: Math.round(arr.reduce((s: number, t: any) => s + (t.data.next_1_hours?.details?.precipitation_amount ?? 0), 0) * 10) / 10,
+      };
+    });
+    const allTemps = ts.map((t) => t.data.instant.details.air_temperature).filter((x: any) => x != null);
+    const now = ts[0];
+    return {
+      nowC: now.data.instant.details.air_temperature ?? null,
+      condition: humanize(now.data.next_1_hours?.summary?.symbol_code ?? now.data.next_6_hours?.summary?.symbol_code),
+      minC: Math.min(...allTemps), maxC: Math.max(...allTemps), parts,
+    };
+  } catch { return null; }
+}
+
 export async function fetchWeather(lat: number, lon: number): Promise<Weather | null> {
   try {
     const r = await fetch(`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`,

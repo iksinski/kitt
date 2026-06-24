@@ -1,11 +1,26 @@
 import type { FastifyInstance } from 'fastify';
 import { mkdir, writeFile, readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildDigest } from './build.js';
 
 const DIR = `${process.env.HOME}/digests`;
+const ICONS = fileURLToPath(new URL('../../../assets/weather-icons/', import.meta.url));
 
 export async function digestRoutes(app: FastifyInstance) {
+  // Serve weather icons so the cached preview renders them (the EPUB embeds its own copies).
+  app.get('/icons/:name', async (req, reply) => {
+    const name = (req.params as { name: string }).name.replace(/[^A-Za-z0-9_.]/g, '');
+    try {
+      const data = await readFile(join(ICONS, name));
+      reply.type('image/png');
+      return data;
+    } catch {
+      reply.code(404);
+      return 'not found';
+    }
+  });
+
   // Instant preview: serve the most recently BUILT paper. Building is expensive
   // (extraction + LLM cleanup = minutes), so it must never run on a page load.
   app.get('/preview', async (_req, reply) => {

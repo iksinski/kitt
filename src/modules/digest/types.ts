@@ -8,8 +8,9 @@ export interface DigestContext {
   // Extended over time: events?: CalendarEvent[]; diary?: ...; travel?: ...
 }
 
-// A rendered section. The builder turns each block into a page/chapter.
-export interface Block { title: string; html: string; }
+// A rendered section. Blocks flow onto the current page unless newPage is set, which
+// starts a fresh chapter (so front-matter flows together; articles get their own page).
+export interface Block { title: string; html: string; newPage?: boolean; }
 
 export interface DigestModule {
   id: string;

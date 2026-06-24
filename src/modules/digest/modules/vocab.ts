@@ -16,7 +16,7 @@ export function vocabModule(cfg: { count: number }): DigestModule {
       }).join('')}</ol><p><small>Translations on the next page →</small></p>`;
       const a = `<h2>Vocabulary — translations</h2><ol>${vocab.map((v) =>
         `<li><strong>${esc(v.word)}</strong> — ${esc(v.translation || '—')}</li>`).join('')}</ol>`;
-      return [{ title: 'Vocabulary', html: q }, { title: 'Vocabulary — translations', html: a }];
+      return [{ title: 'Vocabulary', html: q }, { title: 'Vocabulary — translations', html: a, newPage: true }];
     },
   };
 }

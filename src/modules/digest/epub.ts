@@ -4,8 +4,8 @@ export interface Chapter { id: string; title: string; html: string; }
 
 // Minimal, dependency-light EPUB 3 builder. Hand-rolled so there are no flaky ebook
 // libraries; produces a valid reflowable EPUB that Send-to-Kindle accepts.
-export async function buildEpub(opts: { title: string; author?: string; chapters: Chapter[]; date: string }): Promise<Buffer> {
-  const { title, author = 'kitt', chapters, date } = opts;
+export async function buildEpub(opts: { title: string; author?: string; chapters: Chapter[]; date: string; images?: Array<{ name: string; data: Buffer }> }): Promise<Buffer> {
+  const { title, author = 'kitt', chapters, date, images = [] } = opts;
   const zip = new JSZip();
 
   // mimetype must be first and stored uncompressed.
@@ -23,6 +23,8 @@ export async function buildEpub(opts: { title: string; author?: string; chapters
 <html xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8"/><title>${esc(c.title)}</title></head>
 <body>${c.html}</body></html>`);
   }
+
+  for (const img of images) zip.file(`OEBPS/icons/${img.name}`, img.data);
 
   zip.file('OEBPS/nav.xhtml',
     `<?xml version="1.0" encoding="utf-8"?>
@@ -44,6 +46,7 @@ ${chapters.map((c) => `<li><a href="${c.id}.xhtml">${esc(c.title)}</a></li>`).jo
   <manifest>
     <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
     ${chapters.map((c) => `<item id="${c.id}" href="${c.id}.xhtml" media-type="application/xhtml+xml"/>`).join('\n    ')}
+    ${images.map((img, i) => `<item id="img${i}" href="icons/${img.name}" media-type="image/png"/>`).join('\n    ')}
   </manifest>
   <spine>
     ${chapters.map((c) => `<itemref idref="${c.id}"/>`).join('\n    ')}
