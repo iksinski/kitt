@@ -10,12 +10,41 @@ export async function fetchTopStories(n: number): Promise<Story[]> {
   }));
 }
 
-export interface Weather { nowC: number | null; maxC: number; minC: number; precipMm: number; }
+export interface Weather { nowC: number | null; maxC: number; minC: number; precipMm: number; condition: string; }
+
+// MET Norway (yr.no) requires an identifying User-Agent or it blocks the request.
+const MET_UA = 'kitt-digest/1.0 (github.com/iksinski/kitt; pasieczny.igor@gmail.com)';
+const SYMBOLS: Record<string, string> = {
+  clearsky: 'clear', fair: 'fair', partlycloudy: 'partly cloudy', cloudy: 'cloudy', fog: 'fog',
+  lightrain: 'light rain', rain: 'rain', heavyrain: 'heavy rain',
+  lightrainshowers: 'light showers', rainshowers: 'showers', heavyrainshowers: 'heavy showers',
+  lightsnow: 'light snow', snow: 'snow', heavysnow: 'heavy snow', sleet: 'sleet', lightsleet: 'light sleet',
+  rainandthunder: 'rain & thunder', thunderstorm: 'thunderstorm',
+};
+const humanize = (code?: string): string => {
+  if (!code) return '';
+  const base = code.replace(/_(day|night|polartwilight)$/, '');
+  return SYMBOLS[base] ?? base.replace(/_/g, ' ');
+};
+
 export async function fetchWeather(lat: number, lon: number): Promise<Weather | null> {
   try {
-    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&forecast_days=1&timezone=auto`);
+    const r = await fetch(`https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`,
+      { headers: { 'User-Agent': MET_UA }, signal: AbortSignal.timeout(15000) });
+    if (!r.ok) return null;
     const d: any = await r.json();
-    return { nowC: d.current?.temperature_2m ?? null, maxC: d.daily.temperature_2m_max[0], minC: d.daily.temperature_2m_min[0], precipMm: d.daily.precipitation_sum[0] };
+    const ts: any[] = d.properties.timeseries;
+    const now = ts[0];
+    const next = ts.slice(0, 24);
+    const temps = next.map((t) => t.data.instant.details.air_temperature).filter((x) => x != null);
+    const precip = next.reduce((s, t) => s + (t.data.next_1_hours?.details?.precipitation_amount ?? 0), 0);
+    return {
+      nowC: now.data.instant.details.air_temperature ?? null,
+      maxC: Math.max(...temps),
+      minC: Math.min(...temps),
+      precipMm: Math.round(precip * 10) / 10,
+      condition: humanize(now.data.next_6_hours?.summary?.symbol_code ?? now.data.next_1_hours?.summary?.symbol_code),
+    };
   } catch { return null; }
 }
 

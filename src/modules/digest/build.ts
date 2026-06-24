@@ -18,9 +18,9 @@ export interface DigestResult {
 
 export async function buildDigest(opts?: { stories?: number; lat?: number; lon?: number; city?: string }): Promise<DigestResult> {
   const stories = opts?.stories ?? Number(process.env.DIGEST_STORIES ?? 10);
-  const lat = opts?.lat ?? Number(process.env.DIGEST_LAT ?? 52.23);
-  const lon = opts?.lon ?? Number(process.env.DIGEST_LON ?? 21.01);
-  const city = opts?.city ?? process.env.DIGEST_CITY ?? 'Warsaw';
+  const lat = opts?.lat ?? Number(process.env.DIGEST_LAT ?? 52.13);
+  const lon = opts?.lon ?? Number(process.env.DIGEST_LON ?? 21.08);
+  const city = opts?.city ?? process.env.DIGEST_CITY ?? 'Warsaw · Kabaty';
   const date = new Date().toISOString().slice(0, 10);
 
   const [hn, weather, fx, vocab] = await Promise.all([
@@ -32,7 +32,7 @@ export async function buildDigest(opts?: { stories?: number; lat?: number; lon?:
 
   // Front page: weather, FX, due vocab.
   let front = `<h1>kitt daily</h1><p>${date}</p>`;
-  if (weather) front += `<h2>Weather · ${esc(city)}</h2><p>${weather.nowC != null ? 'Now ' + weather.nowC + '°C. ' : ''}Today ${weather.minC}–${weather.maxC}°C, precipitation ${weather.precipMm} mm.</p>`;
+  if (weather) front += `<h2>Weather · ${esc(city)}</h2><p>${weather.nowC != null ? 'Now ' + weather.nowC + '°C' + (weather.condition ? ', ' + esc(weather.condition) : '') + '. ' : ''}Today ${weather.minC}–${weather.maxC}°C, precipitation ${weather.precipMm} mm. <span>(yr.no)</span></p>`;
   if (fx) front += `<h2>USD / PLN</h2><p>${fx.rate} (NBP, ${fx.date})</p>`;
   if (vocab.length) front += `<h2>Vocabulary due (${vocab.length})</h2><ul>${vocab.map((v) => `<li>${esc(v.word)}${v.stem && v.stem !== v.word ? ' — ' + esc(v.stem) : ''}</li>`).join('')}</ul>`;
 
