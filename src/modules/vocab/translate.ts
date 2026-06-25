@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -78,6 +78,42 @@ export function morphCandidates(raw: string): string[] {
   return out;
 }
 
+// Last-resort AI gloss: pipe the still-uncovered words over SSH to the Mac's locked-down
+// translate proxy (local Ollama). Opt-in — only runs when VOCAB_AI_SSH names the ssh host
+// (e.g. "mac-translate"); unset = skip entirely, staying fully offline/deterministic.
+function aiHost(): string | null {
+  return process.env.VOCAB_AI_SSH || null;
+}
+function sshJson(host: string, payload: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const p = spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', host], { timeout: 180_000 });
+    let out = '', err = '';
+    p.stdout.on('data', (d) => (out += d));
+    p.stderr.on('data', (d) => (err += d));
+    p.on('error', reject);
+    p.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(err || `ssh exit ${code}`))));
+    p.stdin.write(payload);
+    p.stdin.end();
+  });
+}
+// Translate a batch of {id, term, context} in one round-trip (one model load). Returns a
+// map id -> Polish gloss for whatever came back. Failures degrade to an empty map.
+async function aiGlossBatch(items: { id: string; term: string; context: string }[]): Promise<Map<string, string>> {
+  const host = aiHost();
+  const result = new Map<string, string>();
+  if (!host || !items.length) return result;
+  try {
+    const stdout = await sshJson(host, JSON.stringify(items));
+    const parsed = JSON.parse(stdout) as { id?: string; gloss?: string | null }[];
+    for (const r of parsed) {
+      if (r?.id && r.gloss) result.set(r.id, String(r.gloss).slice(0, 300));
+    }
+  } catch {
+    /* proxy/host unreachable — leave words null, they can be edited by hand */
+  }
+  return result;
+}
+
 // Query the offline FreeDict eng-pol dictionary via local dictd for one exact term.
 async function dictLookup(term: string): Promise<string | null> {
   let stdout = '';
@@ -119,12 +155,21 @@ export async function enrichTranslations(): Promise<number> {
     .from(words)
     .where(and(eq(words.deleted, false), isNull(words.translation)));
   let n = 0;
+  const aiNeeded: { id: string; term: string; context: string }[] = [];
   for (const r of rows) {
     const t = await lookupPolish(r.word, r.stem);
     if (t) {
       await db.update(words).set({ translation: t }).where(eq(words.id, r.id));
       n++;
+    } else {
+      aiNeeded.push({ id: r.id, term: r.word, context: '' });
     }
+  }
+  // Anything both dictionaries missed: last-resort AI gloss (no-op unless VOCAB_AI_SSH set).
+  const glosses = await aiGlossBatch(aiNeeded);
+  for (const [id, gloss] of glosses) {
+    await db.update(words).set({ translation: gloss }).where(eq(words.id, id));
+    n++;
   }
   return n;
 }
