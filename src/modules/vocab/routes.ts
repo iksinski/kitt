@@ -5,7 +5,7 @@ import { db } from '../../db/index.js';
 import { words, lookups, books, fsrsCards } from '../../db/schema.js';
 import { review, type RatingName } from './fsrs.js';
 import { importVocab } from './import.js';
-import { enrichTranslations } from './translate.js';
+import { enrichTranslations, lookupPolish } from './translate.js';
 
 export async function vocabRoutes(app: FastifyInstance) {
   // Words currently due for review (the main MCP/assistant entry point).
@@ -62,6 +62,28 @@ export async function vocabRoutes(app: FastifyInstance) {
 
   // Re-run Polish enrichment for any words still missing a translation.
   app.post('/enrich', async () => ({ translated: await enrichTranslations() }));
+
+  // Manually set/clear a word's translation (UI editing). null/empty clears it.
+  const patchBody = z.object({ translation: z.string().trim().max(300).nullable() });
+  app.patch('/words/:id', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const { translation } = patchBody.parse(req.body);
+    const w = await db.select({ id: words.id }).from(words).where(eq(words.id, id)).limit(1);
+    if (!w.length) return reply.code(404).send({ error: 'word not found' });
+    const value = translation || null;
+    await db.update(words).set({ translation: value }).where(eq(words.id, id));
+    return { id, translation: value };
+  });
+
+  // Re-run the offline dictionary lookup for a single word and store any hit.
+  app.post('/words/:id/enrich', async (req, reply) => {
+    const id = (req.params as { id: string }).id;
+    const w = await db.select({ id: words.id, word: words.word, stem: words.stem }).from(words).where(eq(words.id, id)).limit(1);
+    if (!w.length) return reply.code(404).send({ error: 'word not found' });
+    const translation = await lookupPolish(w[0].word, w[0].stem);
+    if (translation) await db.update(words).set({ translation }).where(eq(words.id, id));
+    return { id, translation };
+  });
 
   // Soft-delete a word: hide it from review. The importer never clears `deleted`, so it
   // stays gone after the next Kindle sync instead of popping back up.
