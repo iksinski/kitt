@@ -8,7 +8,15 @@ const app = Fastify({ logger: true });
 const reviewHtml = readFileSync(fileURLToPath(new URL('../public/review.html', import.meta.url)), 'utf8');
 
 app.get('/health', async () => ({ ok: true }));
-app.get('/', async (_req, reply) => { reply.type('text/html'); return reviewHtml; });
+// Vocab review UI lives under its own module route; `/` is reserved for a future dashboard.
+app.get('/vocab', async (_req, reply) => { reply.type('text/html'); return reviewHtml; });
+app.get('/', async (_req, reply) => {
+  reply.type('text/html');
+  return '<!doctype html><meta charset="utf-8"><title>kitt</title>' +
+    '<body style="font-family:system-ui;background:#0f1115;color:#e6e8eb;display:grid;place-items:center;height:100vh;margin:0">' +
+    '<div style="text-align:center"><h1 style="font-weight:600">kitt</h1>' +
+    '<p style="color:#8b919c">Dashboard coming soon · <a style="color:#7fd1a8" href="/vocab">vocab review →</a></p></div>';
+});
 await app.register(vocabRoutes, { prefix: '/vocab' });
 await app.register(digestRoutes, { prefix: '/digest' });
 
