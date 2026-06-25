@@ -19,13 +19,21 @@
   .card { background:var(--card); border-radius:16px; padding:32px; width:100%;
           max-width:680px; margin:auto; box-shadow:0 10px 40px rgba(0,0,0,.3); }
   .word { font-size:2.4rem; font-weight:700; word-break:break-word; }
-  .trans { color:#7fd1a8; margin-top:10px; font-size:1.45rem; font-weight:600; }
+  .trans-row { display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  .trans { color:#7fd1a8; font-size:1.45rem; font-weight:600; }
+  .trans .none { color:var(--muted); font-style:italic; font-weight:400; font-size:1.1rem; }
+  .mini { flex:0 0 auto; background:transparent; color:var(--muted); border:1px solid #3a3f4a;
+          border-radius:8px; padding:4px 9px; font-size:.8rem; cursor:pointer; min-width:0; }
+  .mini:hover { color:var(--fg); border-color:#55606e; }
+  #transInput { background:#0f1115; color:#7fd1a8; border:1px solid #3a3f4a; border-radius:8px;
+                padding:7px 10px; font-size:1.15rem; font-weight:600; min-width:240px; flex:1; }
   .stem { color:var(--muted); margin-top:4px; font-size:1.1rem; }
   .sentence { margin-top:18px; line-height:1.55; font-size:1.05rem; }
   .book { color:var(--muted); font-size:.82rem; margin-top:6px; }
   .btns { display:flex; gap:10px; margin-top:26px; flex-wrap:wrap; }
   button { flex:1; min-width:84px; padding:13px 14px; border:0; border-radius:10px;
            color:var(--fg); font-size:.95rem; font-weight:600; cursor:pointer; }
+  button.mini { flex:0 0 auto; padding:4px 9px; font-weight:400; }
   button .k { font-size:.72rem; opacity:.6; font-weight:400; }
   .reveal { background:#2b3340; }
   .again { background:#5a2330; } .hard { background:#5a4a23; }
@@ -41,8 +49,8 @@
   <main><div class="card" id="card"><div class="empty">Loading…</div></div></main>
 <script>
   const $ = (s) => document.querySelector(s);
-  let queue = [], cur = null, revealed = false, busy = false;
-  const esc = (s) => (s || '').replace(/[&<>]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+  let queue = [], cur = null, revealed = false, busy = false, detail = null;
+  const esc = (s) => (s || '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
   async function api(path, opts) { try { const r = await fetch(path, opts); return r.ok ? await r.json() : null; } catch { return null; } }
 
@@ -55,7 +63,7 @@
     queue = d ? d.due : [];
     next();
   }
-  function next() { revealed = false; cur = queue.shift() || null; render(); }
+  function next() { revealed = false; detail = null; cur = queue.shift() || null; render(); }
 
   async function render() {
     const card = $('#card');
@@ -73,26 +81,60 @@
          </div>`;
       $('#reveal').onclick = reveal;
       $('#del').onclick = del;
-    } else {
-      const detail = await api('/vocab/words/' + encodeURIComponent(cur.id));
-      const tr = detail?.word?.translation ? `<div class="trans">${esc(detail.word.translation)}</div>` : '';
-      const stem = cur.stem && cur.stem !== cur.word ? `<div class="stem">${esc(cur.stem)}</div>` : '';
-      const lks = (detail?.lookups || []).map((l) =>
-        `<div class="sentence">${esc(l.usage || '')}</div>` +
-        (l.book ? `<div class="book">${esc(l.book)}${l.authors ? ' · ' + esc(l.authors) : ''}</div>` : '')
-      ).join('');
-      card.innerHTML =
-        `<div class="word">${esc(cur.word)}</div>${tr}${stem}${lks}
-         <div class="btns">
-           <button class="again" data-r="again">Again <span class="k">1</span></button>
-           <button class="hard" data-r="hard">Hard <span class="k">2</span></button>
-           <button class="good" data-r="good">Good <span class="k">3</span></button>
-           <button class="easy" data-r="easy">Easy <span class="k">4</span></button>
-         </div>
-         <div class="btns"><button class="del" id="del">🗑 Delete <span class="k">d</span></button></div>`;
-      card.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => rate(b.dataset.r)));
-      $('#del').onclick = del;
+      return;
     }
+    detail = await api('/vocab/words/' + encodeURIComponent(cur.id));
+    const t = detail?.word?.translation || '';
+    const transInner = t ? esc(t) : '<span class="none">— no translation —</span>';
+    const stem = cur.stem && cur.stem !== cur.word ? `<div class="stem">${esc(cur.stem)}</div>` : '';
+    const lks = (detail?.lookups || []).map((l) =>
+      `<div class="sentence">${esc(l.usage || '')}</div>` +
+      (l.book ? `<div class="book">${esc(l.book)}${l.authors ? ' · ' + esc(l.authors) : ''}</div>` : '')
+    ).join('');
+    card.innerHTML =
+      `<div class="word">${esc(cur.word)}</div>
+       <div class="trans-row">
+         <span class="trans" id="trans">${transInner}</span>
+         <button class="mini" id="editTrans" title="edit translation">✎ edit</button>
+         <button class="mini" id="autoTrans" title="look up in dictionary">⤓ auto</button>
+       </div>${stem}${lks}
+       <div class="btns">
+         <button class="again" data-r="again">Again <span class="k">1</span></button>
+         <button class="hard" data-r="hard">Hard <span class="k">2</span></button>
+         <button class="good" data-r="good">Good <span class="k">3</span></button>
+         <button class="easy" data-r="easy">Easy <span class="k">4</span></button>
+       </div>
+       <div class="btns"><button class="del" id="del">🗑 Delete <span class="k">d</span></button></div>`;
+    card.querySelectorAll('[data-r]').forEach((b) => (b.onclick = () => rate(b.dataset.r)));
+    $('#del').onclick = del;
+    $('#editTrans').onclick = startEdit;
+    $('#autoTrans').onclick = autoTrans;
+  }
+
+  function startEdit() {
+    const t = detail?.word?.translation || '';
+    $('#trans').innerHTML =
+      `<input id="transInput" value="${esc(t)}" placeholder="Polish translation" />
+       <button class="mini" id="saveTrans">save</button>`;
+    $('#saveTrans').onclick = saveTrans;
+    const inp = $('#transInput'); inp.focus(); inp.select();
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); saveTrans(); }
+      if (e.key === 'Escape') { e.preventDefault(); render(); }
+    });
+  }
+  async function saveTrans() {
+    if (busy) return; busy = true;
+    const v = $('#transInput').value.trim();
+    await api('/vocab/words/' + encodeURIComponent(cur.id),
+      { method:'PATCH', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ translation: v || null }) });
+    busy = false; render();
+  }
+  async function autoTrans() {
+    if (busy) return; busy = true;
+    $('#trans').innerHTML = '<span class="none">…looking up…</span>';
+    await api('/vocab/words/' + encodeURIComponent(cur.id) + '/enrich', { method:'POST' });
+    busy = false; render();
   }
 
   function reveal() { revealed = true; render(); }
@@ -109,6 +151,7 @@
 
   document.addEventListener('keydown', (e) => {
     if (!cur) return;
+    if (e.target && e.target.tagName === 'INPUT') return; // don't hijack keys while editing
     if (e.key === 'd') { del(); return; }
     if (!revealed && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); reveal(); }
     else if (revealed && ['1','2','3','4'].includes(e.key)) { rate(['again','hard','good','easy'][+e.key - 1]); }
