@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { books, words, lookups, fsrsCards } from '../../db/schema.js';
 import { newCard } from './fsrs.js';
-import { enrichTranslations } from './translate.js';
+import { enrichTranslations, stripHomograph } from './translate.js';
 
 type Row = Record<string, any>;
 const ts = (v: any): Date => new Date(Number(v));
@@ -36,7 +36,7 @@ export async function importVocab(sqlitePath: string): Promise<ImportResult> {
 
   if (wordRows.length) {
     await db.insert(words).values(wordRows.map((w) => ({
-      id: w.id, word: w.word, stem: w.stem, lang: w.lang, category: Number(w.category) || 0, addedAt: ts(w.timestamp),
+      id: w.id, word: w.word, stem: stripHomograph(w.stem) || w.stem, lang: w.lang, category: Number(w.category) || 0, addedAt: ts(w.timestamp),
     }))).onConflictDoUpdate({
       target: words.id,
       set: { category: sql`excluded.category`, word: sql`excluded.word`, stem: sql`excluded.stem` },
