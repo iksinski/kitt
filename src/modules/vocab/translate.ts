@@ -1,11 +1,34 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { DatabaseSync } from 'node:sqlite';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { words } from '../../db/schema.js';
 
 const run = promisify(execFile);
 const DICT_DB = 'fd-eng-pol';
+
+// Wiktionary-derived eng->pol dictionary (WikDict, prebuilt SQLite). Optional fallback after
+// FreeDict, for words FreeDict's smaller wordlist misses. Lazily opened; absent file = skip.
+const WIKDICT_PATH = process.env.WIKDICT_DB ?? `${process.env.HOME}/kitt/data/wikdict-en-pl.sqlite3`;
+let wikdictStmt: ReturnType<DatabaseSync['prepare']> | null | undefined;
+function wikdictLookup(term: string): string | null {
+  if (wikdictStmt === undefined) {
+    try {
+      const sdb = new DatabaseSync(WIKDICT_PATH, { readOnly: true });
+      wikdictStmt = sdb.prepare('SELECT trans_list FROM simple_translation WHERE written_rep = ? ORDER BY max_score DESC LIMIT 1');
+    } catch {
+      wikdictStmt = null; // not deployed here — silently skip this source
+    }
+  }
+  if (!wikdictStmt) return null;
+  try {
+    const row = wikdictStmt.get(term) as { trans_list?: string } | undefined;
+    return row?.trans_list ? String(row.trans_list).slice(0, 300) : null;
+  } catch {
+    return null;
+  }
+}
 
 // Strip Kindle homograph markers like "coax (1)" -> "coax". Case-preserving (for storage).
 export function stripHomograph(s: string): string {
@@ -69,14 +92,20 @@ async function dictLookup(term: string): Promise<string | null> {
   return trans.join('; ').slice(0, 300);
 }
 
-// Best offline Polish gloss for a word: try cleaned-stem candidates, then surface-form
-// candidates, taking the first dictionary hit. AI-free, deterministic.
+// Best offline Polish gloss for a word: over cleaned-stem then surface-form candidates,
+// try FreeDict first (smaller but higher quality), then the Wiktionary-derived WikDict as a
+// fallback. First hit wins. AI-free, deterministic.
 export async function lookupPolish(word: string, stem: string): Promise<string | null> {
-  const tried = new Set<string>();
-  for (const cand of [...morphCandidates(stem), ...morphCandidates(word)]) {
-    if (tried.has(cand)) continue;
-    tried.add(cand);
+  const cands: string[] = [];
+  for (const c of [...morphCandidates(stem), ...morphCandidates(word)]) {
+    if (!cands.includes(c)) cands.push(c);
+  }
+  for (const cand of cands) {
     const hit = await dictLookup(cand);
+    if (hit) return hit;
+  }
+  for (const cand of cands) {
+    const hit = wikdictLookup(cand);
     if (hit) return hit;
   }
   return null;

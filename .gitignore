@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env
 *.log
+
+# local data (WikDict dictionary, etc.)
+data/
